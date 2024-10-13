@@ -1,0 +1,91 @@
+---
+title: "Étude sur les Logements Neufs et Existants"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Charger les packages nécessaires
+options(repos = c(CRAN = "https://cran.r-project.org"))
+install.packages(c("dplyr", "ggplot2", "leaflet", "knitr"))
+library(dplyr)
+library(ggplot2)
+library(knitr)
+knitr::opts_chunk$set(echo = FALSE,warning=FALSE,message=FALSE)
+
+# Lire les fichiers CSV
+logements_neufs <- read.csv("C:/Users/theof/Downloads/dpe-v2-logements-neufs.csv"
+, sep = ",", encoding = "UTF-8")
+logements_existants <- read.csv("C:/Users/theof/Downloads/dpe-v2-logements-existants.csv", sep = ",", encoding = "UTF-8")
+
+# Fusionner les deux jeux de données avec une colonne indiquant le type de logementµ
+logements_neufs <- logements_neufs %>% mutate(across(everything(), as.character))
+logements_existants <- logements_existants %>% mutate(across(everything(), as.character))
+str(logements_neufs)
+str(logements_existants)
+
+
+logements_neufs$Type <- "Neuf"
+logements_existants$Type <- "Ancien"
+logements <- bind_rows(logements_neufs, logements_existants)
+```
+```{r}
+# Calculer le nombre total de logements par type
+kpi_total <- logements %>%
+  group_by(Type) %>%
+  summarise(Total_Logements = n())
+
+# Afficher les KPI dans un tableau
+kable(kpi_total, caption = "Total des logements par type")
+```
+```{r}
+# Analyse bivariée : Relation entre le type de logement et la classe énergétique
+logements_bivariees <- logements %>%
+  group_by(Type, Etiquette_DPE) %>%
+  summarise(Count = n())
+
+# Afficher le tableau
+kable(logements_bivariees, caption = "Répartition des logements par classe énergétique et type")
+
+```
+```{r}
+ggplot(logements, aes(x = Etiquette_DPE, fill = Type)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Répartition des logements par classe énergétique", x = "Classe Énergétique", y = "Nombre de Logements") +
+  theme_minimal()
+
+```
+```{r}
+# Bar plot pour visualiser la fréquence de chaque classe énergétique par étage
+ggplot(logements, aes(x = factor(N._étage_appartement), fill = Etiquette_DPE)) +
+  geom_bar(position = "dodge", alpha = 0.7) +  # Barres avec transparence
+  labs(
+    title = "Fréquence des Classes Énergétiques par Étage",
+    x = "Étage de l'Appartement",
+    y = "Nombre de Logements"
+  ) +
+  theme_minimal(base_size = 15) +  # Taille de police de base
+  theme(
+    legend.title = element_blank(),  # Supprimer le titre de la légende
+    legend.position = "top",  # Positionner la légende en haut
+    panel.grid.major = element_line(size = 0.5, linetype = 'solid', color = "gray80"),  # Grille majeure
+    panel.grid.minor = element_blank()  # Supprimer la grille mineure
+  )
+
+
+```
+
+```{r}
+# Fonction pour filtrer les données selon un code postal et un type de logement
+selection_logements <- function(code_postal, type_logement = "Tous") {
+  if (type_logement == "Tous") {
+    return(logements %>% filter(logements$Code_postal_.brut. == code_postal))
+  } else {
+    return(logements %>% filter(logements$Code_postal_.brut. == code_postal & Type == type_logement))
+  }
+}
+
+# Exemple d'utilisation de la fonction
+logements_selectionnes <- selection_logements(code_postal = "69008", type_logement = "Neuf")
+kable(table(logements_selectionnes$Etiquette_GES), caption = "Logements sélectionnés (Code Postal 69000 et Neuf)")
+
+```

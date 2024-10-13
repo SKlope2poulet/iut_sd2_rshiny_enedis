@@ -143,11 +143,14 @@ Localisation géographique : coordonnées GPS des logements pour permettre une a
                  )
         ),
         
-        # Onglet 4 : Carte interactive
+        # Onglet 4 : Carte interactive avec filtre DPE
         tabPanel("Carte",
                  sidebarLayout(
                    sidebarPanel(
                      textInput("communeFilter", "Filtrer par commune", value = ""),
+                     selectInput("dpeFilter", "Filtrer par étiquette DPE", 
+                                 choices = c("Toutes", unique(logements_adresses$Etiquette_DPE)),
+                                 selected = "Toutes"),
                      selectInput("colorChoice", "Choisir un type de couleur", 
                                  choices = c("Étiquette DPE", "Consommation"))
                    ),
@@ -198,9 +201,21 @@ Localisation géographique : coordonnées GPS des logements pour permettre une a
     }
   })
   
-  # Carte interactive
+  # Filtrage dynamique pour la carte
+  filteredData <- reactive({
+    data <- logements_adresses
+    if (input$communeFilter != "") {
+      data <- data %>% filter(nom_commune == input$communeFilter)
+    }
+    if (input$dpeFilter != "Toutes") {
+      data <- data %>% filter(Etiquette_DPE == input$dpeFilter)
+    }
+    data
+  })
+  
+  # Carte interactive avec filtre DPE
   output$map <- renderLeaflet({
-    leaflet(data = logements_adresses) %>%
+    leaflet(data = filteredData()) %>%
       addTiles() %>%
       addCircleMarkers(~lon, ~lat, color = ~color, radius = 5, popup = ~paste("DPE:", Etiquette_DPE))
   })
@@ -227,83 +242,82 @@ Localisation géographique : coordonnées GPS des logements pour permettre une a
   })
   
   # Histogramme des étiquettes DPE
-  output$histDPE <- renderPlot({
-    ggplot(logements_adresses, aes(x = Etiquette_DPE, fill = Etiquette_DPE)) +
-      geom_bar() +
-      theme_minimal() +
-      labs(title = "Répartition des classes DPE", x = "Étiquette DPE", y = "Nombre de logements")
-  })
-  
-  # Nuage de points pour différents types d'énergie
-  output$scatterPlot <- renderPlot({
-    ggplot(logements_adresses, aes(x = Etiquette_DPE, y = as.numeric(Conso_5_usages_é_finale), color = Etiquette_DPE)) +
-      geom_point(size = 3) +
-      theme_minimal
-    geom_point(size = 3) +
-      theme_minimal() +
-      labs(title = "Nuage de points pour Consommation 5 usages finale", x = "Étiquette DPE", y = "Consommation 5 usages finale (kWh)")
-  })
-  
-  # Régression linéaire et tracé
-  regressionData <- reactive({
-    req(input$xVar, input$yVar)
-    logements_adresses %>%
-      select(all_of(input$xVar), all_of(input$yVar)) %>%
-      filter(!is.na(.[[1]]) & !is.na(.[[2]]))
-  })
-  
-  output$regressionPlot <- renderPlot({
-    req(input$regressionBtn)
-    data <- regressionData()
-    ggplot(data, aes_string(x = input$xVar, y = input$yVar)) +
-      geom_point() +
-      geom_smooth(method = "lm", se = FALSE, color = "blue") +
-      labs(title = paste("Régression linéaire entre", input$xVar, "et", input$yVar))
-  })
-  
-  output$correlation <- renderText({
-    req(input$regressionBtn)
-    data <- regressionData()
-    corr <- cor(data[[input$xVar]], data[[input$yVar]], use = "complete.obs")
-    paste("Coefficient de corrélation :", round(corr, 2))
-  })
-  
-  # Export du graphique en PNG
-  output$downloadPlot <- downloadHandler(
-    filename = function() {
-      paste("regression_plot", Sys.Date(), ".png", sep = "")
-    },
-    content = function(file) {
-      png(file)
+    output$histDPE <- renderPlot({
+      ggplot(logements_adresses, aes(x = Etiquette_DPE, fill = Etiquette_DPE)) +
+        geom_bar() +
+        theme_minimal() +
+        labs(title = "Répartition des classes DPE", x = "Étiquette DPE", y = "Nombre de logements")
+    })
+    
+    # Nuage de points pour différents types d'énergie
+    output$scatterPlot <- renderPlot({
+      ggplot(logements_adresses, aes(x = Etiquette_DPE, y = as.numeric(Conso_5_usages_é_finale), color = Etiquette_DPE)) +
+        geom_point(size = 3) +
+        theme_minimal() +
+        labs(title = "Nuage de points pour Consommation 5 usages finale", x = "Étiquette DPE", y = "Consommation 5 usages finale (kWh)")
+    })
+    
+    # Régression linéaire et tracé
+    regressionData <- reactive({
+      req(input$xVar, input$yVar)
+      logements_adresses %>%
+        select(all_of(input$xVar), all_of(input$yVar)) %>%
+        filter(!is.na(.[[1]]) & !is.na(.[[2]]))
+    })
+    
+    output$regressionPlot <- renderPlot({
+      req(input$regressionBtn)
       data <- regressionData()
-      plot <- ggplot(data, aes_string(x = input$xVar, y = input$yVar)) +
+      ggplot(data, aes_string(x = input$xVar, y = input$yVar)) +
         geom_point() +
         geom_smooth(method = "lm", se = FALSE, color = "blue") +
         labs(title = paste("Régression linéaire entre", input$xVar, "et", input$yVar))
-      print(plot)
-      dev.off()
-    }
-  )
+    })
+    
+    output$correlation <- renderText({
+      req(input$regressionBtn)
+      data <- regressionData()
+      corr <- cor(data[[input$xVar]], data[[input$yVar]], use = "complete.obs")
+      paste("Coefficient de corrélation :", round(corr, 2))
+    })
+    
+    # Export du graphique en PNG
+    output$downloadPlot <- downloadHandler(
+      filename = function() {
+        paste("regression_plot", Sys.Date(), ".png", sep = "")
+      },
+      content = function(file) {
+        png(file)
+        data <- regressionData()
+        plot <- ggplot(data, aes_string(x = input$xVar, y = input$yVar)) +
+          geom_point() +
+          geom_smooth(method = "lm", se = FALSE, color = "blue") +
+          labs(title = paste("Régression linéaire entre", input$xVar, "et", input$yVar))
+        print(plot)
+        dev.off()
+      }
+    )
+    
+    # Export des données en CSV
+    output$downloadData <- downloadHandler(
+      filename = function() {
+        paste("regression_data", Sys.Date(), ".csv", sep = "")
+      },
+      content = function(file) {
+        write_csv(regressionData(), file)
+      }
+    )
+    
+    # Choix du thème graphique pour les autres graphiques
+    output$themedPlot <- renderPlot({
+      theme_func <- match.fun(input$themeChoice)
+      ggplot(logements_adresses, aes(x = Etiquette_DPE, y = as.numeric(Conso_5_usages_é_finale), fill = Etiquette_DPE)) +
+        geom_boxplot() +
+        theme_func() +
+        labs(title = "Consommation par Étiquette DPE", x = "Étiquette DPE", y = "Consommation (kWh)")
+    })
+  }
   
-  # Export des données en CSV
-  output$downloadData <- downloadHandler(
-    filename = function() {
-      paste("regression_data", Sys.Date(), ".csv", sep = "")
-    },
-    content = function(file) {
-      write_csv(regressionData(), file)
-    }
-  )
+  # Lancer l'application Shiny
+  shinyApp(ui = ui, server = server)
   
-  # Choix du thème graphique pour les autres graphiques
-  output$themedPlot <- renderPlot({
-    theme_func <- match.fun(input$themeChoice)
-    ggplot(logements_adresses, aes(x = Etiquette_DPE, y = as.numeric(Conso_5_usages_é_finale), fill = Etiquette_DPE)) +
-      geom_boxplot() +
-      theme_func() +
-      labs(title = "Consommation par Étiquette DPE", x = "Étiquette DPE", y = "Consommation (kWh)")
-  })
-}
-
-# Lancer l'application Shiny
-shinyApp(ui = ui, server = server)
